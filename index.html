@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <meta charset="utf-8">
+        <title>Ketchup invaders</title>
+        <script src="phaser.min.js" charset="utf-8"></script>
+    </head>
+    <body>
+
+        <script>
+            var game = new Phaser.Game(1024, 700, Phaser.AUTO, 'phaser-example', { preload: preload, create: create, update: update, render: render });
+
+            function preload() {
+
+                game.load.image('bullet', 'images/ketchup_drop.png');
+                game.load.spritesheet('invader', 'images/frie1.png', 27, 97);
+                game.load.image('ship', 'images/bottle.png');
+                game.load.image('tomato', 'images/single_tomato.png');
+                game.load.spritesheet('kaboom', 'images/single_tomato.png', 128, 128);
+
+            }
+
+            var player;
+            var aliens;
+            var bullets;
+            var bulletTime = 0;
+            var cursors;
+            var fireButton;
+            var explosions;
+            var score = 0;
+            var scoreString = '';
+            var scoreText;
+            var lives;
+            var firingTimer = 0;
+            var stateText;
+            var livingEnemies = [];
+
+            function create() {
+
+                game.physics.startSystem(Phaser.Physics.ARCADE);
+                game.stage.backgroundColor = '#fff';
+
+                //  Our bullet group
+                bullets = game.add.group();
+                bullets.enableBody = true;
+                bullets.physicsBodyType = Phaser.Physics.ARCADE;
+                bullets.createMultiple(30, 'bullet');
+                bullets.setAll('anchor.x', 0.5);
+                bullets.setAll('anchor.y', 1);
+                bullets.setAll('outOfBoundsKill', true);
+                bullets.setAll('checkWorldBounds', true);
+
+                //  The hero!
+                player = game.add.sprite(512, 650, 'ship');
+                player.anchor.setTo(0.5, 0.5);
+                game.physics.enable(player, Phaser.Physics.ARCADE);
+
+                //  The baddies!
+                aliens = game.add.group();
+                aliens.enableBody = true;
+                aliens.physicsBodyType = Phaser.Physics.ARCADE;
+                createAliens();
+
+                //  The score
+                scoreString = 'Score : ';
+                scoreText = game.add.text(10, 10, scoreString + score, { font: '34px Arial', fill: '#dd3322' });
+
+                //  Lives
+                lives = game.add.group();
+                game.add.text(game.world.width - 140, 10, 'Lives : ', { font: '34px Arial', fill: '#dd3322' });
+
+                //  Text
+                stateText = game.add.text(game.world.centerX,game.world.centerY,' ', { font: '84px Arial', fill: '#dd3322' });
+                stateText.anchor.setTo(0.5, 0.5);
+                stateText.visible = false;
+
+                for (var i = 0; i < 3; i++)
+                {
+                    var ship = lives.create(game.world.width - 120 + (30 * i), 75, 'tomato');
+                    ship.anchor.setTo(0.5, 0.5);
+                    ship.angle = 0;
+                    ship.alpha = 0.75;
+                    ship.scale.setTo(0.15, 0.15);
+                }
+
+                //  An explosion pool
+                explosions = game.add.group();
+                explosions.createMultiple(30, 'kaboom');
+                explosions.forEach(setupInvader, this);
+
+                //  And some controls to play the game with
+                cursors = game.input.keyboard.createCursorKeys();
+                fireButton = game.input.keyboard.addKey(Phaser.Keyboard.SPACEBAR);
+
+            }
+
+            function createAliens () {
+
+                for (var y = 0; y < 4; y++)
+                {
+                    if (y % 2 == 0) {
+                        ecart = 30;
+                    } else {
+                        ecart = 0;
+                    }
+                    for (var x = 0; x < 10; x++)
+                    {
+                        var alien = aliens.create(x * 60 + ecart, y * 50, 'invader');
+                        alien.anchor.setTo(0.5, 0.5);
+                        alien.animations.add('fly', [ 0, 1, 2, 3 ], 20, true);
+                        alien.play('fly');
+                        alien.body.moves = false;
+                    }
+                }
+
+                aliens.x = 100;
+                aliens.y = 50;
+
+                //  All this does is basically start the invaders moving. Notice we're moving the Group they belong to, rather than the invaders directly.
+                var tween = game.add.tween(aliens).to( { x: 200 }, 2000, Phaser.Easing.Linear.None, true, 0, 1000, true);
+
+                //  When the tween loops it calls descend
+                tween.onLoop.add(descend, this);
+            }
+
+            function setupInvader (invader) {
+
+                invader.anchor.x = 0.5;
+                invader.anchor.y = 0.5;
+                invader.animations.add('kaboom');
+
+            }
+
+            function descend() {
+
+                aliens.y += 10;
+
+            }
+
+            function update() {
+
+                if (player.alive)
+                {
+                    //  Reset the player, then check for movement keys
+                    player.body.velocity.setTo(0, 0);
+
+                    if (cursors.left.isDown)
+                    {
+                        player.body.velocity.x = -200;
+                    }
+                    else if (cursors.right.isDown)
+                    {
+                        player.body.velocity.x = 200;
+                    }
+
+                    //  Firing?
+                    if (fireButton.isDown)
+                    {
+                        fireBullet();
+                    }
+
+
+                    //  Run collision
+                    game.physics.arcade.overlap(bullets, aliens, collisionHandler, null, this);
+                }
+
+            }
+
+            function render() {
+            }
+
+            function collisionHandler (bullet, alien) {
+
+                //  When a bullet hits an alien we kill them both
+                bullet.kill();
+                alien.kill();
+
+                //  Increase the score
+                score += 20;
+                scoreText.text = scoreString + score;
+
+                //  And create an explosion :)
+                var explosion = explosions.getFirstExists(false);
+                explosion.reset(alien.body.x, alien.body.y);
+                explosion.play('kaboom', 30, false, true);
+
+                if (aliens.countLiving() == 0)
+                {
+                    score += 1000;
+                    scoreText.text = scoreString + score;
+
+                    stateText.text = " You Won, \n Click to restart";
+                    stateText.visible = true;
+
+                    //the "click to restart" handler
+                    game.input.onTap.addOnce(restart,this);
+                }
+
+            }
+
+            function fireBullet () {
+
+                //  To avoid them being allowed to fire too fast we set a time limit
+                if (game.time.now > bulletTime)
+                {
+                    //  Grab the first bullet we can from the pool
+                    bullet = bullets.getFirstExists(false);
+
+                    if (bullet)
+                    {
+                        //  And fire it
+                        bullet.reset(player.x, player.y + 8);
+                        bullet.body.velocity.y = -400;
+                        bulletTime = game.time.now + 200;
+                    }
+                }
+
+            }
+
+            function resetBullet (bullet) {
+
+                //  Called if the bullet goes out of the screen
+                bullet.kill();
+
+            }
+
+            function restart () {
+
+                //  A new level starts
+
+                //resets the life count
+                lives.callAll('revive');
+                //  And brings the aliens back from the dead :)
+                aliens.removeAll();
+                createAliens();
+
+                //revives the player
+                player.revive();
+                //hides the text
+                stateText.visible = false;
+
+            }
+        </script>
+
+    </body>
+</html>
